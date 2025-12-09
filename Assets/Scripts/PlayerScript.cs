@@ -21,6 +21,7 @@ public class PlayerScript : MonoBehaviour {
     [Header("Movement Settings")]
     [SerializeField] private float movSpeed = 5f;
     [SerializeField] private float sprintMultiplier = 1.2f;
+    [SerializeField] private float rotateSpeed = 1f;
     private Rigidbody2D rb;
 
     [Header("Dash Settings")]
@@ -92,6 +93,7 @@ public class PlayerScript : MonoBehaviour {
     private void Movement() {
         float movDirX = Input.GetAxisRaw("Horizontal");
         float movDirY = Input.GetAxisRaw("Vertical");
+        Vector2 moveDir = new Vector2(movDirX,movDirY);
         float actualMovSpeed = movSpeed;
 
         if (Input.GetKey(KeyCode.LeftShift)) {
@@ -99,9 +101,16 @@ public class PlayerScript : MonoBehaviour {
             stamina -= staminaLostWhileSprint * Time.deltaTime;
             staminaRegenDelayDynamic = staminaRegenDelay;
         }
-        rb.velocity = new Vector2(movDirX, movDirY).normalized * actualMovSpeed;
+        rb.velocity = moveDir.normalized * actualMovSpeed;
+        playerTurn(moveDir);
+        Debug.Log(moveDir);
     }
-
+    private void playerTurn(Vector2 movDir) {
+        if (movDir != Vector2.zero) {
+            Quaternion toRotate = Quaternion.LookRotation(Vector3.forward, movDir);
+            transform.rotation = Quaternion.RotateTowards(transform.rotation, toRotate, rotateSpeed*Time.deltaTime);
+        }
+    }
     private void DashMovement() {
 
         if (Input.GetKeyDown(KeyCode.Space) && Time.time - lastDashTime >= dashCooldown && !IsDashing && stamina>=20f) {

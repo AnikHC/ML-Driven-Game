@@ -22,6 +22,7 @@ public class NonMLSniperScript : MonoBehaviour
 
     private void Start() {
         shootingDelayDynamic=shootingDelay;
+        transform.rotation = Quaternion.LookRotation(Vector3.forward, (player.transform.position - transform.position).normalized);
     }
 
     private void Update() {
