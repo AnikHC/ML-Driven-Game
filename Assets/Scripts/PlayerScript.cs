@@ -103,7 +103,7 @@ public class PlayerScript : MonoBehaviour {
         }
         rb.velocity = moveDir.normalized * actualMovSpeed;
         playerTurn(moveDir);
-        Debug.Log(moveDir);
+        //Debug.Log(moveDir);
     }
     private void playerTurn(Vector2 movDir) {
         if (movDir != Vector2.zero) {
