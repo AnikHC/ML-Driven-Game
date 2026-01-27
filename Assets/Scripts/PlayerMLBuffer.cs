@@ -22,14 +22,13 @@ public class PlayerMLBuffer : MonoBehaviour {
     private void Update() {
         if (player == null) return;
 
-        // EXACT order used in training
         float[] frame =
         {
-            player.Position.x,   // px
-            player.Position.y,   // py
-            player.Velocity.x,   // pvx
-            player.Velocity.y,   // pvy
-            player.AimAngle      // aim
+            player.Position.x,
+            player.Position.y,
+            player.Velocity.x,
+            player.Velocity.y,
+            player.AimAngle
         };
 
         for (int i = 0; i < featureDim; i++)
@@ -45,7 +44,7 @@ public class PlayerMLBuffer : MonoBehaviour {
         return isFull;
     }
 
-    // Returns [20,5] oldest → newest
+    // LSTM input: [20,5]
     public float[,] GetSequence() {
         if (!isFull) return null;
 
@@ -53,11 +52,26 @@ public class PlayerMLBuffer : MonoBehaviour {
 
         for (int t = 0; t < sequenceLength; t++) {
             int src = (index + t) % sequenceLength;
-            for (int f = 0; f < featureDim; f++) {
+            for (int f = 0; f < featureDim; f++)
                 seq[t, f] = buffer[src, f];
-            }
         }
 
         return seq;
+    }
+
+    // Action classifier input: [5]
+    public float[] GetLatestFrame() {
+        if (!isFull && index == 0) return null;
+
+        int latestIndex = index - 1;
+        if (latestIndex < 0)
+            latestIndex = sequenceLength - 1;
+
+        float[] frame = new float[featureDim];
+
+        for (int i = 0; i < featureDim; i++)
+            frame[i] = buffer[latestIndex, i];
+
+        return frame;
     }
 }

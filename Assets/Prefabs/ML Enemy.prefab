@@ -209,6 +209,7 @@ GameObject:
   m_Component:
   - component: {fileID: 2865407271735313833}
   - component: {fileID: 2411492649877064315}
+  - component: {fileID: 4193996929261401062}
   m_Layer: 6
   m_Name: ML Enemy
   m_TagString: Untagged
@@ -278,6 +279,36 @@ BoxCollider2D:
   serializedVersion: 2
   m_Size: {x: 0.8335745, y: 0.7814114}
   m_EdgeRadius: 0
+--- !u!114 &4193996929261401062
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6051110903698450975}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 54daad385f449d44499f4aa17e6800af, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  playerBuffer: {fileID: 0}
+  ml: {fileID: 0}
+  moveSpeed: 2
+  rotationSpeed: 360
+  predictionWeight: 0.5
+  directionUpdateInterval: 0.25
+  directionSmoothSpeed: 8
+  directionChangeThreshold: 25
+  interceptRange: 4
+  attackRange: 1.8
+  minTurnSpeedFactor: 0.3
+  dashRange: 1.8
+  dashSpeed: 8
+  dashDuration: 0.25
+  dashCooldown: 2
+  dashWindup: 1
+  dashDamage: 20
+  dashHitRadius: 0.6
 --- !u!1 &7549566545639589665
 GameObject:
   m_ObjectHideFlags: 0

@@ -1,35 +1,39 @@
-﻿using System.Collections;
-using UnityEngine;
+﻿using UnityEngine;
+using System.Collections;
 
 public class MLEnemyController : MonoBehaviour {
-
+    /* ===================== REFERENCES ===================== */
     [Header("References")]
-    public PlayerMLBuffer playerBuffer;   // Rolling 20-frame buffer
-    public MLInference ml;                // LSTM inference
+    public PlayerMLBuffer playerBuffer;
+    public MLInference ml;
+    public ActionClassifierInference actionClassifier;
     private Transform player;
 
+    /* ===================== PHASE CONTROL ===================== */
+    [Header("Boss Phase")]
+    [Range(1, 2)]
+    public int phase = 1;
+
+    /* ===================== MOVEMENT ===================== */
     [Header("Movement")]
     public float moveSpeed = 3f;
     public float rotationSpeed = 360f;
 
+    /* ===================== ML CONTROL ===================== */
     [Header("ML Influence")]
     [Range(0f, 1f)]
-    public float predictionWeight = 0.7f; // ML bias strength
+    public float predictionWeight = 0.65f;
 
-    [Header("Direction Control")]
-    public float directionUpdateInterval = 0.25f; // How often ML is queried
-    public float directionSmoothSpeed = 8f;       // Smoothing speed
+    public float interceptRange = 4f;
+    public float attackRange = 1.8f;
 
-    [Header("Direction Commitment")]
-    public float directionChangeThreshold = 25f;  // Degrees needed to re-commit
-
-    [Header("Engagement Distances")]
-    public float interceptRange = 4f;   // start cutting
-    public float attackRange = 1.8f;     // stop thinking, commit
-
-    [Header("Final Polish")]
+    /* ===================== SMOOTHING ===================== */
+    [Header("Smoothing")]
+    public float directionUpdateInterval = 0.25f;
+    public float directionSmoothSpeed = 6f;
     public float minTurnSpeedFactor = 0.3f;
 
+    /* ===================== DASH ATTACK ===================== */
     [Header("Dash Attack")]
     public float dashRange = 1.8f;
     public float dashSpeed = 8f;
@@ -37,55 +41,89 @@ public class MLEnemyController : MonoBehaviour {
     public float dashCooldown = 2f;
     public float dashWindup = 0.15f;
 
-    [Header("Dash Damage")]
-    public float dashDamage = 20f;
-    public float dashHitRadius = 0.6f;
-
-    private bool attackCommitted = false;
-    private Vector2 committedAttackDir;
-    private Vector2 desiredDirection;     // Where enemy wants to go
-    private Vector2 smoothedDirection;    // Where enemy actually moves
-    private float directionTimer;
     private bool isDashing = false;
     private bool canDash = true;
-    private bool dashHasHit = false;
+
+    /* ===================== PHASE-2 BULLET DODGE ===================== */
+    [Header("Phase-2 Bullet Dodge")]
+    public float bulletDodgeStrength = 3f;
+    public float bulletDodgeDuration = 0.18f;
+    public float bulletDodgeCooldown = 1.2f;
+
+    private float bulletDodgeCooldownTimer = 0f;
+    private float dodgeTimer = 0f;
+    private Vector2 dodgeDir;
+
+    /* ===================== INTERNAL STATE ===================== */
+    private Vector2 desiredDirection;
+    private Vector2 smoothedDirection;
+    private float directionTimer = 0f;
+
+    /* ===================== UNITY ===================== */
 
     void Start() {
-        player = playerBuffer.player.transform;
+        player = GameObject.FindWithTag("Player").transform;
+        playerBuffer = GameObject.Find("MLBrain").GetComponent<PlayerMLBuffer>();
+        ml = GameObject.Find("MLBrain").GetComponent<MLInference>();
+        actionClassifier = GetComponent<ActionClassifierInference>();
 
-        // Initial commitment: go straight to player
         desiredDirection = (player.position - transform.position).normalized;
         smoothedDirection = desiredDirection;
     }
 
     void Update() {
-        float distanceToPlayer = Vector2.Distance(transform.position, player.position);
+        if (player == null || playerBuffer == null || ml == null)
+            return;
 
-        if (!isDashing && canDash && distanceToPlayer <= dashRange) {
+        if (bulletDodgeCooldownTimer > 0f)
+            bulletDodgeCooldownTimer -= Time.deltaTime;
+
+        float dist = Vector2.Distance(transform.position, player.position);
+
+        /* ========== DASH ATTACK (BOTH PHASES) ========== */
+        if (!isDashing && canDash && dist <= dashRange) {
             StartCoroutine(DashAttack());
             return;
         }
 
-        if (!playerBuffer.IsReady())
-            return;
+        /* ========== PHASE-2 BULLET DODGE ========== */
+        if (phase == 2 && dodgeTimer <= 0f && bulletDodgeCooldownTimer <= 0f) {
+            if (playerBuffer.player.IsAttacking) {
+                Vector2 playerVel = playerBuffer.player.Velocity;
 
-        float distToPlayer = Vector2.Distance(transform.position, player.position);
+                dodgeDir =
+                    playerVel.magnitude > 0.1f
+                    ? Vector2.Perpendicular(playerVel).normalized
+                    : Vector2.Perpendicular(
+                        (player.position - transform.position).normalized
+                      ).normalized;
 
-        // CLOSE RANGE → COMMIT (NO ML)
-        if (distToPlayer <= attackRange) {
-            if (!attackCommitted) {
-                committedAttackDir = (player.position - transform.position).normalized;
-                attackCommitted = true;
+                dodgeTimer = bulletDodgeDuration;
+                bulletDodgeCooldownTimer = bulletDodgeCooldown;
             }
+        }
 
-            MoveInDirection(committedAttackDir);
+        if (dodgeTimer > 0f) {
+            dodgeTimer -= Time.deltaTime;
+            Move(dodgeDir * bulletDodgeStrength);
             return;
         }
 
-        // MID RANGE → INTERCEPT MODE (ML LOCKED)
-        if (distToPlayer <= interceptRange) {
-            attackCommitted = false;
+        /* ========== WAIT FOR ML BUFFER ========== */
+        if (!playerBuffer.IsReady()) {
+            Move((player.position - transform.position).normalized);
+            return;
+        }
 
+        /* ========== CLOSE RANGE (COMMIT) ========== */
+        if (dist <= attackRange) {
+            Vector2 commitDir = (player.position - transform.position).normalized;
+            Move(commitDir);
+            return;
+        }
+
+        /* ========== INTERCEPT RANGE (ML) ========== */
+        if (dist <= interceptRange) {
             directionTimer += Time.deltaTime;
             if (directionTimer >= directionUpdateInterval) {
                 directionTimer = 0f;
@@ -98,77 +136,61 @@ public class MLEnemyController : MonoBehaviour {
                 directionSmoothSpeed * Time.deltaTime
             );
 
-            MoveInDirection(smoothedDirection);
+            Move(smoothedDirection);
             return;
         }
 
-        // FAR RANGE → PURE CHASE (NO ML)
-        attackCommitted = false;
-        Vector2 chaseDir = (player.position - transform.position).normalized;
-        MoveInDirection(chaseDir);
+        /* ========== FAR RANGE (CHASE) ========== */
+        Move((player.position - transform.position).normalized);
     }
 
+    /* ===================== ML DIRECTION ===================== */
 
-    /* ===================== AI LOGIC ===================== */
-
-    // Decide intent (ML biases direction, never absolute position)
     Vector2 CalculateDesiredDirection() {
         Vector2 toPlayer = (player.position - transform.position).normalized;
 
-        // If player is idle, ML is ignored
         if (playerBuffer.player.Velocity.magnitude < 0.1f)
             return toPlayer;
 
-        // ML predicted future position
         Vector2 predicted = ml.PredictMovement(playerBuffer.GetSequence());
         Vector2 toPredicted = (predicted - (Vector2)transform.position).normalized;
 
-        // Blend player direction with ML direction
-        Vector2 blended = Vector2.Lerp(toPlayer, toPredicted, predictionWeight);
-        return blended.normalized;
+        return Vector2.Lerp(toPlayer, toPredicted, predictionWeight).normalized;
     }
 
     /* ===================== MOVEMENT ===================== */
 
-    void MoveInDirection(Vector2 dir) {
-        if (dir.sqrMagnitude < 0.01f)
+    void Move(Vector2 dir) {
+        if (dir.sqrMagnitude < 0.001f)
             return;
 
-        transform.position += (Vector3)(dir * moveSpeed * Time.deltaTime);
+        transform.position += (Vector3)(dir.normalized * moveSpeed * Time.deltaTime);
 
         float angle = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg - 90f;
         Quaternion targetRot = Quaternion.Euler(0, 0, angle);
 
-        float speedFactor = Mathf.Clamp01(dir.magnitude);
-        float turnFactor = Mathf.Lerp(
-            minTurnSpeedFactor,
-            1f,
-            speedFactor
-        );
+        float turnFactor = Mathf.Lerp(minTurnSpeedFactor, 1f, dir.magnitude);
 
         transform.rotation = Quaternion.RotateTowards(
             transform.rotation,
             targetRot,
             rotationSpeed * turnFactor * Time.deltaTime
         );
-
     }
+
+    /* ===================== DASH ATTACK ===================== */
+
     IEnumerator DashAttack() {
         isDashing = true;
         canDash = false;
-        dashHasHit = false;
 
-        // Wind-up (telegraph)
         yield return new WaitForSeconds(dashWindup);
 
         Vector2 dashDir = (player.position - transform.position).normalized;
-
         float elapsed = 0f;
+
         while (elapsed < dashDuration) {
             transform.position += (Vector3)(dashDir * dashSpeed * Time.deltaTime);
-
-            TryDashHit();
-
             elapsed += Time.deltaTime;
             yield return null;
         }
@@ -178,25 +200,4 @@ public class MLEnemyController : MonoBehaviour {
         yield return new WaitForSeconds(dashCooldown);
         canDash = true;
     }
-    void TryDashHit() {
-        if (dashHasHit) return;
-
-        float dist = Vector2.Distance(transform.position, player.position);
-
-        if (dist <= dashHitRadius) {
-            dashHasHit = true;
-
-            // Damage player
-            PlayerScript ps = player.GetComponent<PlayerScript>();
-            if (ps != null) {
-                ps.health -= dashDamage;
-            }
-        }
-    }
-    void OnDrawGizmosSelected() {
-        Gizmos.color = Color.red;
-        Gizmos.DrawWireSphere(transform.position, dashHitRadius);
-    }
-
-
 }
